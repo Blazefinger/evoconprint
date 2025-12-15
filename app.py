@@ -7,13 +7,11 @@ import requests
 from flask import Flask, request, render_template
 
 app = Flask(__name__)
-APP_VERSION = "evoconprint-shiftdate-shift-only-v1-2025-12-16"
+APP_VERSION = "evoconprint-shiftdate-shift-only-v2-2025-12-16"
 
-# ===== Railway Variables =====
 EVOCON_TENANT = os.getenv("EVOCON_TENANT", "")
 EVOCON_SECRET = os.getenv("EVOCON_SECRET", "")
 
-# ===== Items to print (rows) =====
 ORDERED_ITEMS = [
     "Θερμοκρασία λαμινατορίου (°C)",
     "Είδος μαργαρίνης",
@@ -28,13 +26,9 @@ ORDERED_ITEMS = [
 ]
 ALLOWED_ITEMS = set(ORDERED_ITEMS)
 
-# For ordering donetime columns in a human way per shift
 SHIFT_START = {"A": "06:00", "B": "14:00", "Γ": "22:00"}
 
 
-# ======================================================
-# GLOBAL ERROR HANDLER -> always show real error
-# ======================================================
 @app.errorhandler(Exception)
 def handle_any_exception(e):
     tb = traceback.format_exc()
@@ -48,9 +42,6 @@ def handle_any_exception(e):
     )
 
 
-# ======================================================
-# BASIC ROUTES
-# ======================================================
 @app.get("/health")
 def health():
     return {"ok": True, "version": APP_VERSION}
@@ -61,13 +52,9 @@ def home():
     return "<a href='/print'>Go to Print</a> | <a href='/health'>Health</a>"
 
 
-# ======================================================
-# HELPERS
-# ======================================================
 def basic_auth_header():
     if not EVOCON_TENANT or not EVOCON_SECRET:
         raise RuntimeError("Missing EVOCON_TENANT or EVOCON_SECRET (Railway Variables)")
-
     token = base64.b64encode(f"{EVOCON_TENANT}:{EVOCON_SECRET}".encode("utf-8")).decode("utf-8")
     return {"Authorization": f"Basic {token}"}
 
@@ -93,10 +80,6 @@ def minutes(t):
 
 
 def sort_donetime_list(times, shift_name):
-    """
-    Sort times by "minutes since shift start", so Γ shift (22:00->06:00)
-    doesn't sort 00:20 before 23:40.
-    """
     start_str = SHIFT_START.get(shift_name, "00:00")
     start_t = parse_hhmm(start_str) or datetime.strptime("00:00", "%H:%M").time()
     start_m = minutes(start_t)
@@ -109,12 +92,9 @@ def sort_donetime_list(times, shift_name):
     return sorted(times, key=key)
 
 
-# ======================================================
-# EVOCON API (DATE ONLY: YYYY-MM-DD)
-# ======================================================
 def fetch_checklists_json(start_date: str, end_date: str):
     """
-    Evocon endpoint expects startTime/endTime in DATE-ONLY format:
+    Evocon expects date-only strings:
       YYYY-MM-DD
     """
     url = "https://api.evocon.com/api/reports/checklists_json"
@@ -147,13 +127,10 @@ def fetch_checklists_json(start_date: str, end_date: str):
     return data
 
 
-# ======================================================
-# DATA PROCESSING
-# ======================================================
 def build_shift_index(rows):
     """
-    Build unique list of (shiftDate, shift) seen in data.
-    Used to populate dropdown. Preselect latest by shiftDate + last donetime.
+    Unique (shiftDate, shift) for dropdown.
+    Preselect latest using shiftDate + last donetime.
     """
     idx = {}
     for r in rows:
@@ -181,9 +158,8 @@ def build_shift_index(rows):
 
 def build_report(rows, shiftDate, shiftName):
     """
-    We trust Evocon allocation:
+    Trust Evocon allocation:
       filter strictly by shiftDate + shift
-    Then group values by donetime, create dynamic columns.
     """
     filtered = [
         r for r in rows
@@ -192,7 +168,7 @@ def build_report(rows, shiftDate, shiftName):
     ]
 
     submissions = {}  # donetime -> { itemname -> value }
-    meta = {}         # donetime -> header info (station/factory/operator/product/order)
+    meta = {}         # donetime -> header info
 
     for r in filtered:
         donetime = str(r.get("donetime") or "").strip()
@@ -235,14 +211,8 @@ def build_report(rows, shiftDate, shiftName):
     }
 
 
-# ======================================================
-# UI ROUTES
-# ======================================================
 @app.get("/print")
 def picker():
-    """
-    Fetch last 4 days (date-only) to populate shiftDate+shift dropdown.
-    """
     today = datetime.now().date()
     start_date = (today - timedelta(days=4)).strftime("%Y-%m-%d")
     end_date = today.strftime("%Y-%m-%d")
@@ -259,10 +229,9 @@ def picker():
 @app.get("/print/render")
 def render_print():
     """
-    Called with:
-      /print/render?key=YYYY-MM-DD|Γ
-    We fetch shiftDate -> shiftDate+1 to include rows after midnight for Γ.
-    Then filter strictly by shiftDate+shift (Evocon allocation).
+    key=YYYY-MM-DD|Shift
+    Fetch shiftDate -> shiftDate+1 to include Γ shift after midnight.
+    Then filter by shiftDate+shift ONLY.
     """
     key = request.args.get("key", "")
     parts = key.split("|")

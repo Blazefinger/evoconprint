@@ -59,8 +59,8 @@
 
     {% for row in matrix %}
     <tr>
-      <td class="left">{{ row.label }}</td>
-      {% for v in row.values %}
+      <td class="left">{{ row["label"] }}</td>
+      {% for v in row["values"] %}
         <td>{{ v }}</td>
       {% endfor %}
     </tr>
