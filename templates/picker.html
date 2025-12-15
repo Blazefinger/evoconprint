@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <title>Select Shift</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    select, button { font-size: 14px; padding: 8px; }
+    .hint { color: #444; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h3>Επιλογή βάρδιας για εκτύπωση</h3>
+
+  <form method="get" action="/print/render">
+    <select name="key">
+      {% for s in shifts %}
+        <option value="{{ s.shiftDate }}|{{ s.shift }}|{{ s.station }}"
+          {% if loop.index0 == 0 %}selected{% endif %}>
+          {{ s.shiftDate }} — Βάρδια {{ s.shift }} — {{ s.station }}
+        </option>
+      {% endfor %}
+    </select>
+    <button type="submit">Generate</button>
+  </form>
+
+  <div class="hint">
+    Προεπιλογή: το πιο πρόσφατο shift που βρέθηκε (τελευταίες 3 ημέρες).
+  </div>
+</body>
+</html>

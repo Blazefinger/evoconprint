@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<title>Laminator QC – Shift Report</title>
+
+<style>
+  @page { size: A4; margin: 12mm; }
+  body { font-family: Arial, Helvetica, sans-serif; background: white; color: #000; font-size: 11px; line-height: 1.2; }
+  .page { width: 190mm; margin: auto; }
+
+  .header { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; margin-bottom: 6mm; }
+  .logo { font-weight: bold; font-size: 16px; }
+  .title { text-align: center; font-weight: bold; font-size: 13px; }
+  .doc { text-align: right; font-size: 10px; }
+
+  .info { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #000; margin-bottom: 5mm; }
+  .info div { border-right: 1px solid #000; padding: 4px; }
+  .info div:last-child { border-right: none; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; table-layout: fixed; }
+  th, td { border: 1px solid #000; padding: 4px; text-align: center; word-wrap: break-word; }
+  th { background: #f0f0f0; font-weight: bold; }
+  .left { text-align: left; }
+
+  .section { font-weight: bold; margin: 6mm 0 2mm 0; }
+
+  .footer { margin-top: 10mm; display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .sign { border: 1px solid #000; height: 20mm; padding: 4px; }
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="logo">Mondelez<br>International</div>
+    <div class="title">
+      ΕΝΤΥΠΟ ΑΝΑΦΟΡΑΣ ΘΕΣΗΣ ΕΡΓΑΣΙΑΣ<br>
+      ΕΡΓΑΖΟΜΕΝΟΣ ΛΑΜΙΝΑΤΟΡΙΟΥ CROISSANT
+    </div>
+    <div class="doc">
+      Κωδ.: QM09P01F231<br>
+      Έκδοση: 04
+    </div>
+  </div>
+
+  <div class="info">
+    <div><b>Shift Date:</b><br>{{ shiftDate }}</div>
+    <div><b>Βάρδια:</b><br>{{ shift }}</div>
+    <div><b>Γραμμή:</b><br>{{ station }}</div>
+    <div><b>Operator:</b><br>{{ header.operator }}</div>
+  </div>
+
+  <div class="section">Laminator QC – Μετρήσεις (ώρες πραγματικής καταγραφής)</div>
+
+  <table>
+    <tr>
+      <th class="left" style="width: 55mm;">Παράμετρος</th>
+      {% for t in columns %}
+        <th>{{ t }}</th>
+      {% endfor %}
+    </tr>
+
+    {% for row in matrix %}
+    <tr>
+      <td class="left">{{ row.label }}</td>
+      {% for v in row.values %}
+        <td>{{ v }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="footer">
+    <div class="sign"><b>Υπογραφή Εργαζόμενου</b></div>
+    <div class="sign"><b>Υπογραφή Προϊσταμένου Βάρδιας</b></div>
+  </div>
+
+</div>
+</body>
+</html>
