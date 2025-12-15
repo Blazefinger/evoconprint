@@ -7,11 +7,9 @@ from flask import Flask, request, render_template
 
 app = Flask(__name__)
 
-# ====== ENV VARS (Railway Variables) ======
 EVOCON_TENANT = os.getenv("EVOCON_TENANT", "")
 EVOCON_SECRET = os.getenv("EVOCON_SECRET", "")
 
-# ====== MAPPING: itemname -> field key (we use itemname directly in matrix) ======
 ORDERED_ITEMS = [
     "Θερμοκρασία λαμινατορίου (°C)",
     "Είδος μαργαρίνης",
@@ -24,15 +22,16 @@ ORDERED_ITEMS = [
     "Ποσοστό μαργαρίνης (%)",
     "Ποσοστό ανακύκλωσης ζύμης recupero (%)",
 ]
-
 ALLOWED_ITEMS = set(ORDERED_ITEMS)
 
-SHIFT_START = {"A": "06:00", "B": "14:00", "Γ": "22:00"}  # as you said
+SHIFT_START = {"A": "06:00", "B": "14:00", "Γ": "22:00"}
 
 
-# -------------------------
-# Helpers
-# -------------------------
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
 def basic_auth_header():
     if not EVOCON_TENANT or not EVOCON_SECRET:
         raise RuntimeError("Missing EVOCON_TENANT / EVOCON_SECRET env vars")
@@ -74,48 +73,26 @@ def sort_donetime_list(times, shift_name):
 
 
 def fetch_checklists_json(start_iso: str, end_iso: str):
-    """
-    Calls:
-      https://api.evocon.com/api/reports/checklists_json
-
-    IMPORTANT:
-    Depending on your Evocon setup, params might be startTime/endTime or startDate/endDate.
-    Your screenshot/export suggests startTime/endTime works in your environment.
-    """
     url = "https://api.evocon.com/api/reports/checklists_json"
-    headers = {
-        "Accept": "application/json",
-        **basic_auth_header(),
-    }
-    params = {
-        "startTime": start_iso,
-        "endTime": end_iso,
-    }
-
+    headers = {"Accept": "application/json", **basic_auth_header()}
+    params = {"startTime": start_iso, "endTime": end_iso}
     r = requests.get(url, headers=headers, params=params, timeout=45)
     r.raise_for_status()
     data = r.json()
-    # Expecting list of rows (dicts)
     if not isinstance(data, list):
         raise RuntimeError("Unexpected API response: expected a JSON list")
     return data
 
 
 def build_shift_index(rows):
-    """
-    Find unique (shiftDate, shift, station) combos and their latest donetime
-    so we can preselect the latest shift.
-    """
     idx = {}
     for r in rows:
         sd = str(r.get("shiftDate") or "").strip()
         sh = str(r.get("shift") or "").strip()
         st = str(r.get("station") or "").strip()
         dt = str(r.get("donetime") or "").strip()
-
         if not (sd and sh and st and dt):
             continue
-
         t = parse_hhmm(dt)
         key = (sd, sh, st)
         if key not in idx:
@@ -132,16 +109,10 @@ def build_shift_index(rows):
         t = x["last_time"] or datetime.min.time()
         return (d, t)
 
-    out = sorted(idx.values(), key=sort_key, reverse=True)
-    return out
+    return sorted(idx.values(), key=sort_key, reverse=True)
 
 
 def build_report(rows, shiftDate, shiftName, station):
-    """
-    Group rows by donetime (submission-time) and build:
-      columns: sorted list of donetime strings
-      matrix: rows aligned to columns
-    """
     filtered = [
         r for r in rows
         if str(r.get("shiftDate") or "").strip() == shiftDate
@@ -149,8 +120,8 @@ def build_report(rows, shiftDate, shiftName, station):
         and str(r.get("station") or "").strip() == station
     ]
 
-    submissions = {}  # donetime -> { itemname -> itemresult }
-    meta = {}         # donetime -> operator/product/order
+    submissions = {}
+    meta = {}
 
     for r in filtered:
         donetime = str(r.get("donetime") or "").strip()
@@ -172,56 +143,38 @@ def build_report(rows, shiftDate, shiftName, station):
 
     matrix = []
     for item in ORDERED_ITEMS:
-        row_vals = []
-        for t in columns:
-            row_vals.append(submissions.get(t, {}).get(item, ""))
-        matrix.append({"label": item, "values": row_vals})
+        matrix.append({
+            "label": item,
+            "values": [submissions.get(t, {}).get(item, "") for t in columns]
+        })
 
     header = {"operator": "", "product": "", "productionOrder": ""}
     if columns:
         header = meta.get(columns[-1], header)
 
-    return {
-        "columns": columns,
-        "matrix": matrix,
-        "header": header,
-        "shiftDate": shiftDate,
-        "shift": shiftName,
-        "station": station,
-    }
+    return {"columns": columns, "matrix": matrix, "header": header,
+            "shiftDate": shiftDate, "shift": shiftName, "station": station}
 
 
-# -------------------------
-# Routes
-# -------------------------
 @app.get("/")
 def home():
-    return "<a href='/print'>Go to Print</a>"
+    return "<a href='/print'>Go to Print</a> | <a href='/health'>Health</a>"
 
 
 @app.get("/print")
 def picker():
-    # Fetch last 3 days so we can preselect the latest shift
     now = datetime.now()
     start = (now - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
     end = now
-
     rows = fetch_checklists_json(start.isoformat(), end.isoformat())
     shifts = build_shift_index(rows)
-
     if not shifts:
         return "No shifts found in last 3 days."
-
-    # First option is preselected in picker.html
     return render_template("picker.html", shifts=shifts)
 
 
 @app.get("/print/render")
 def render_print():
-    """
-    Called with:
-      /print/render?key=YYYY-MM-DD|Γ|4η ΓΡΑΜΜΗ
-    """
     key = request.args.get("key", "")
     parts = key.split("|")
     if len(parts) != 3:
@@ -229,4 +182,10 @@ def render_print():
 
     shiftDate, shiftName, station = parts[0].strip(), parts[1].strip(), parts[2].strip()
 
-    # Wider window around shift
+    day = datetime.strptime(shiftDate, "%Y-%m-%d")
+    start = day - timedelta(hours=8)
+    end = day + timedelta(hours=32)
+
+    rows = fetch_checklists_json(start.isoformat(), end.isoformat())
+    report = build_report(rows, shiftDate, shiftName, station)
+    return render_template("print_form.html", **report)
